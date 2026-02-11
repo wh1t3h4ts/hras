@@ -78,6 +78,40 @@ Frontend will run on `http://localhost:3000`
 
 ---
 
+## 🤖 AI Availability & Graceful Degradation
+
+The system implements robust AI availability checking with automatic fallback to rule-based logic when AI services are unavailable, ensuring reliable operation during demos and production.
+
+### Features
+- **Real-time AI Status Monitoring**: Backend checks Google Gemini AI availability every 5 minutes with caching
+- **Visual Status Indicators**: Green/orange indicators in sidebar show AI availability status
+- **Graceful Degradation**: System continues functioning with rule-based triage when AI is unavailable
+- **User Notifications**: Toast notifications inform users of AI status changes
+- **Component-Level Awareness**: Individual components (AI Chat, Patient Triage) show availability status
+- **Demo-Friendly Messages**: Clear, professional messaging suitable for science fair presentations
+
+### Technical Implementation
+- **Backend**: `core/utils/ai.py` contains `is_gemini_available()` function with comprehensive error handling
+- **API Endpoint**: `/api/ai-status/` provides public AI availability status (no authentication required)
+- **Frontend Hook**: `useAiAvailability.js` manages AI status state and periodic checking
+- **Caching**: 5-minute cache prevents excessive API calls while maintaining responsiveness
+- **Error Handling**: Multiple exception types handled (API key issues, network failures, rate limits)
+- **Demo Mode**: When no API key is configured, system runs in demo mode with simulated AI responses
+
+### User Experience
+- **Available AI**: Green indicator, full AI features enabled, "AI-powered" messaging
+- **Demo Mode**: Green indicator with "Demo mode" message, simulated AI responses for demonstration
+- **Unavailable AI**: Orange indicator, rule-based fallback, "Rule-based" messaging
+- **Global Notifications**: Login-time notifications inform users of AI status
+- **Component Feedback**: Buttons and interfaces adapt to show current AI capabilities
+
+### Demo Benefits
+- **Reliability**: System works regardless of internet connectivity or AI service status- **No API Key Required**: Demo mode provides simulated AI responses without needing Google Gemini API key- **Transparency**: Clear visual indicators show when AI features are active
+- **Professional Presentation**: No crashes or error messages during demonstrations
+- **Fallback Logic**: Rule-based triage ensures patient priority assessment continues
+
+---
+
 ## � Receptionist Role & Least Privilege
 
 ### Duties
@@ -302,11 +336,16 @@ for i in range(1, 101):
 
 ## 🔐 User Roles
 
-### **Hospital Admin**
-- Full system access
-- Manage staff and resources
-- View all analytics
-- Configure hospital settings
+**Simplified to single 'admin' role with full privileges (no separate super_admin or hospital_admin). Admins manage the entire system.**
+
+### **Admin**
+- Full system access across all hospitals
+- Approve/reject user registrations
+- Manage all users (change roles, activate/deactivate)
+- Create/edit/delete hospitals
+- Manage all staff and resources
+- View all analytics and data
+- Configure system settings
 
 ### **Doctor**
 - View assigned patients

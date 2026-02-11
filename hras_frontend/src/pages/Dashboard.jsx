@@ -7,10 +7,12 @@ import PatientList from '../components/dashboard/PatientList';
 import ResourceWidget from '../components/dashboard/ResourceWidget';
 import QuickActions from '../components/dashboard/QuickActions';
 import { useAuth } from '../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
 const Dashboard = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const role = user?.role;
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
@@ -32,8 +34,14 @@ const Dashboard = () => {
   const [chartData, setChartData] = useState([]);
 
   useEffect(() => {
+    // Redirect hospital admins to their specific dashboard
+    if (role === 'hospital_admin') {
+      navigate('/hospital-admin-dashboard', { replace: true });
+      return;
+    }
+    
     fetchDashboardData();
-  }, []);
+  }, [role, navigate]);
 
   const fetchDashboardData = async () => {
     try {

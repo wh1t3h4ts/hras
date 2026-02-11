@@ -1,20 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Building2, Edit2, X, Bed, Activity, MapPin } from 'lucide-react';
+import { Building2, Edit2, Bed, Activity, MapPin } from 'lucide-react';
 import toast from 'react-hot-toast';
+import HospitalEditModal from '../components/hospital/HospitalEditModal';
 
 const Hospital = () => {
   const [hospital, setHospital] = useState(null);
   const [staff, setStaff] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [formData, setFormData] = useState({
-    name: '',
-    address: '',
-    beds: '',
-    ots: '',
-    specialties: ''
-  });
 
   useEffect(() => {
     fetchHospitalData();
@@ -29,16 +23,6 @@ const Hospital = () => {
       const hospitalRes = await axios.get('http://localhost:8000/api/hospitals/', { headers });
       const hospitalData = hospitalRes.data[0] || null;
       setHospital(hospitalData);
-      
-      if (hospitalData) {
-        setFormData({
-          name: hospitalData.name,
-          address: hospitalData.address,
-          beds: hospitalData.beds,
-          ots: hospitalData.ots,
-          specialties: hospitalData.specialties
-        });
-      }
 
       // Fetch staff
       try {
@@ -53,33 +37,6 @@ const Hospital = () => {
       console.error('Error fetching hospital data:', error);
       toast.error('Failed to load hospital data');
       setLoading(false);
-    }
-  };
-
-  const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    try {
-      const token = localStorage.getItem('token');
-      if (hospital) {
-        await axios.put(`http://localhost:8000/api/hospitals/${hospital.id}/`, formData, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        toast.success('Hospital updated successfully!');
-      } else {
-        await axios.post('http://localhost:8000/api/hospitals/', formData, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        toast.success('Hospital created successfully!');
-      }
-      setShowModal(false);
-      fetchHospitalData();
-    } catch (error) {
-      console.error('Error saving hospital:', error);
-      toast.error('Failed to save hospital details');
     }
   };
 
@@ -206,101 +163,15 @@ const Hospital = () => {
       </div>
 
       {/* Edit Hospital Modal */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-xl max-w-2xl w-full">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-bold text-slate-100">
-                  {hospital ? 'Edit Hospital Details' : 'Create Hospital Profile'}
-                </h2>
-                <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-100">
-                  <X size={24} />
-                </button>
-              </div>
-
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">Hospital Name</label>
-                  <input
-                    name="name"
-                    value={formData.name}
-                    onChange={handleChange}
-                    className="w-full px-4 py-2 bg-slate-800 border border-slate-600 rounded-lg text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">Address</label>
-                  <textarea
-                    name="address"
-                    value={formData.address}
-                    onChange={handleChange}
-                    rows="2"
-                    className="w-full px-4 py-2 bg-slate-800 border border-slate-600 rounded-lg text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">Total Beds</label>
-                    <input
-                      type="number"
-                      name="beds"
-                      value={formData.beds}
-                      onChange={handleChange}
-                      className="w-full px-4 py-2 bg-slate-800 border border-slate-600 rounded-lg text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">Operating Theaters</label>
-                    <input
-                      type="number"
-                      name="ots"
-                      value={formData.ots}
-                      onChange={handleChange}
-                      className="w-full px-4 py-2 bg-slate-800 border border-slate-600 rounded-lg text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">Specialties</label>
-                  <textarea
-                    name="specialties"
-                    value={formData.specialties}
-                    onChange={handleChange}
-                    rows="2"
-                    placeholder="e.g., Cardiology, Neurology, Pediatrics"
-                    className="w-full px-4 py-2 bg-slate-800 border border-slate-600 rounded-lg text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
-                  />
-                </div>
-
-                <div className="flex gap-3 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => setShowModal(false)}
-                    className="flex-1 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-100 rounded-lg transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-                  >
-                    {hospital ? 'Update Hospital' : 'Create Hospital'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Hospital Edit Modal */}
+      <HospitalEditModal
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+        hospital={hospital}
+        onUpdate={(updatedHospital) => {
+          setHospital(updatedHospital);
+        }}
+      />
     </div>
   );
 };

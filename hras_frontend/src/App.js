@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -21,11 +21,32 @@ import ReceptionistDashboard from './pages/ReceptionistDashboard';
 import UserManagement from './pages/UserManagement';
 import NurseDashboard from './pages/NurseDashboard';
 import DoctorDashboard from './pages/DoctorDashboard';
+import HospitalAdminDashboard from './pages/HospitalAdminDashboard';
+import useAiAvailability from './hooks/useAiAvailability';
+import toast from 'react-hot-toast';
 
+
+function AiStatusNotifier() {
+  const { user } = useAuth();
+  const { aiAvailable, aiMessage } = useAiAvailability();
+  
+  useEffect(() => {
+    if (user && !aiAvailable) {
+      toast('AI features are currently unavailable', {
+        icon: '🤖',
+        duration: 5000,
+        description: 'The system is using rule-based fallbacks for triage and chat.'
+      });
+    }
+  }, [user, aiAvailable]);
+  
+  return null;
+}
 
 function App() {
   return (
     <AuthProvider>
+      <AiStatusNotifier />
       <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <AnimatePresence mode="wait">
           <div className="min-h-screen bg-gray-50">
@@ -64,6 +85,11 @@ function App() {
                     <DoctorDashboard />
                   </ProtectedRoute>
                 } />
+                <Route path="admin-dashboard" element={
+                  <ProtectedRoute allowedRoles={['admin']}>
+                    <HospitalAdminDashboard />
+                  </ProtectedRoute>
+                } />
                 <Route path="patients" element={<Patients />} />
                 <Route path="staff" element={
                   <ProtectedRoute allowedRoles={['admin', 'doctor']}>
@@ -71,7 +97,7 @@ function App() {
                   </ProtectedRoute>
                 } />
                 <Route path="user-management" element={
-                  <ProtectedRoute allowedRoles={['super_admin']}>
+                  <ProtectedRoute allowedRoles={['admin']}>
                     <UserManagement />
                   </ProtectedRoute>
                 } />

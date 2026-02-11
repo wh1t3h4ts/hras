@@ -11,17 +11,20 @@ import {
   MessageSquare,
   X,
   UserCheck,
-  User
+  User,
+  Zap,
+  AlertTriangle
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import useAiAvailability from '../../hooks/useAiAvailability';
 import HRASLogo from '../ui/HRASLogo';
 
 const Sidebar = ({ isOpen, onClose }) => {
   const { user } = useAuth();
+  const { aiAvailable, aiMessage } = useAiAvailability();
   const role = user?.role;
   
   const isAdmin = role === 'admin';
-  const isSuperAdmin = role === 'super_admin';
   const isDoctor = role === 'doctor';
   const isStaff = ['doctor', 'nurse', 'receptionist'].includes(role);
 
@@ -36,7 +39,7 @@ const Sidebar = ({ isOpen, onClose }) => {
       name: 'User Management',
       icon: UserCheck,
       path: '/user-management',
-      roles: ['super_admin']
+      roles: ['admin']
     },
     {
       name: 'My Workspace',
@@ -101,8 +104,11 @@ const Sidebar = ({ isOpen, onClose }) => {
       // Doctors see My Patients, Analytics, AI Assistant, and Profile
       return ['My Workspace', 'Analytics', 'AI Assistant', 'Profile'].includes(item.name);
     }
+    if (role === 'admin') {
+      // Admins see Dashboard, User Management, Hospitals, Staff, Patients, Shifts, Analytics, Profile
+      return ['Dashboard', 'User Management', 'Hospital Details', 'Doctors & Staff', 'Patients', 'Shifts', 'Analytics', 'Profile'].includes(item.name);
+    }
     if (item.roles.includes('all')) return true;
-    if (isSuperAdmin && item.roles.includes('super_admin')) return true;
     if (isAdmin && item.roles.includes('admin')) return true;
     if (isDoctor && item.roles.includes('doctor')) return true;
     if (isStaff && item.roles.some(role => ['doctor', 'nurse', 'receptionist'].includes(role))) return true;
@@ -119,6 +125,10 @@ const Sidebar = ({ isOpen, onClose }) => {
     // Rename My Workspace to My Patients for doctors
     if (role === 'doctor' && item.name === 'My Workspace') {
       return { ...item, name: 'My Patients', path: '/doctor-dashboard' };
+    }
+    // Rename Dashboard for hospital admins
+    if (role === 'hospital_admin' && item.name === 'Dashboard') {
+      return { ...item, name: 'Dashboard', path: '/hospital-admin-dashboard' };
     }
     return item;
   });
@@ -206,6 +216,23 @@ const Sidebar = ({ isOpen, onClose }) => {
               );
             })}
           </nav>
+
+          {/* AI Status Indicator */}
+          <div className="px-3 py-3 border-t border-slate-800/50">
+            <div className="flex items-center space-x-2 text-xs">
+              {aiAvailable ? (
+                <Zap size={14} className="text-green-400" />
+              ) : (
+                <AlertTriangle size={14} className="text-orange-400" />
+              )}
+              <span className={aiAvailable ? 'text-green-400' : 'text-orange-400'}>
+                {aiAvailable ? 'AI Online' : 'AI Offline'}
+              </span>
+            </div>
+            <div className="text-xs text-slate-500 mt-1 truncate" title={aiMessage}>
+              {aiMessage}
+            </div>
+          </div>
         </div>
       </motion.aside>
     </>

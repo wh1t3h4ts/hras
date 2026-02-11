@@ -1,25 +1,53 @@
 from rest_framework import permissions
 
 
-class IsSuperAdmin(permissions.BasePermission):
-    """Only super_admin can access"""
+class IsAdmin(permissions.BasePermission):
+    """Only admin can access"""
     
     def has_permission(self, request, view):
-        return request.user and request.user.is_authenticated and request.user.role == 'super_admin'
+        return request.user and request.user.is_authenticated and request.user.role == 'admin'
 
 
-class IsHospitalAdmin(permissions.BasePermission):
-    """Only hospital_admin can access"""
+class HospitalAdminOnly(permissions.BasePermission):
+    """
+    Explicitly blocks doctors, nurses, and receptionists from administrative functions.
+    Only admin can access.
+    
+    USE CASES:
+    - Staff management (approve/reject users, assign roles)
+    - Shift scheduling and management
+    - Resource allocation (beds, equipment)
+    - Hospital configuration and settings
+    - Analytics and reporting (hospital-wide metrics)
+    
+    BLOCKS:
+    - Doctors: Focus on clinical care, not administration
+    - Nurses: Focus on patient care, not administration  
+    - Receptionists: Focus on patient intake, not administration
+    
+    RATIONALE:
+    Separation of duties between clinical staff and administrative staff.
+    Prevents privilege escalation and maintains clear role boundaries.
+    Clinical staff should not manage hospital operations or other staff.
+    """
     
     def has_permission(self, request, view):
-        return request.user and request.user.is_authenticated and request.user.role == 'hospital_admin'
-
-
-class IsHospitalAdminOrSuperAdmin(permissions.BasePermission):
-    """Hospital admin or super_admin can access"""
-    
-    def has_permission(self, request, view):
-        return request.user and request.user.is_authenticated and request.user.role in ['super_admin', 'hospital_admin']
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        # Allow admin
+        if request.user.role in ['admin']:
+            return True
+        
+        # Explicitly deny clinical staff
+        if request.user.role in ['doctor', 'nurse', 'receptionist']:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied(
+                f"{request.user.role.replace('_', ' ').title()}s cannot access administrative functions. "
+                "This action requires administrator privileges."
+            )
+        
+        return False
 
 
 class IsDoctor(permissions.BasePermission):
@@ -134,24 +162,52 @@ class IsApprovedUser(permissions.BasePermission):
 
 
 class HospitalScopedPermission(permissions.BasePermission):
-    """User can only access data from their assigned hospital"""
+    """
+    Hospital-scoped object-level permission for multi-tenancy.
+    
+    CRITICAL FOR DATA ISOLATION:
+    - Prevents Hospital Admin A from accessing Hospital B's data
+    - Ensures each hospital's data remains completely isolated
+    - Super admin can access all hospitals (system-wide oversight)
+    - Hospital admin can only access their assigned hospital's data
+    
+    PREVENTS CROSS-HOSPITAL ACCESS:
+    - Hospital Admin at "Main Hospital" cannot view/modify patients at "City Hospital"
+    - Hospital Admin cannot see staff, shifts, or resources from other hospitals
+    - Enforces strict tenant isolation in multi-hospital deployment
+    - Protects patient privacy across hospital boundaries
+    
+    IMPLEMENTATION:
+    - has_permission: Checks user has a hospital assignment (except super_admin)
+    - has_object_permission: Verifies object.hospital matches user.hospital
+    - Super admin bypasses all checks (system administrator)
+    
+    EXAMPLE:
+    Hospital Admin at Hospital ID=1 tries to access Patient with hospital_id=2:
+    → has_object_permission returns False (obj.hospital != request.user.hospital)
+    → 403 Forbidden response
+    """
     
     def has_permission(self, request, view):
-        if request.user.role == 'super_admin':
+        # Admin can access all hospitals
+        if request.user.role == 'admin':
             return True
+        # Other users must have a hospital assignment
         return request.user and request.user.is_authenticated and request.user.hospital is not None
     
     def has_object_permission(self, request, view, obj):
-        if request.user.role == 'super_admin':
+        # Admin can access any hospital's data
+        if request.user.role == 'admin':
             return True
+        # Hospital-scoped users can only access their hospital's data
         return obj.hospital == request.user.hospital
 
 
 class DoctorNursePatientPermission(permissions.BasePermission):
-    """Doctors and nurses can access patient data"""
+    """Doctors, nurses, and admins can access patient data"""
     
     def has_permission(self, request, view):
-        return request.user and request.user.is_authenticated and request.user.role in ['doctor', 'nurse', 'hospital_admin', 'super_admin']
+        return request.user and request.user.is_authenticated and request.user.role in ['doctor', 'nurse', 'admin']
 
 
 class IsNotReceptionist(permissions.BasePermission):

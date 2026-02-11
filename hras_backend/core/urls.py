@@ -26,4 +26,5 @@ urlpatterns = [
     # path('analytics/response-times/', views.response_times_analytics, name='response_times'),
     path('patients/ai-triage/', views.ai_triage, name='ai_triage'),
     path('ai-chat/', views.ai_chat, name='ai_chat'),
+    path('ai-status/', views.ai_status, name='ai_status'),
 ]

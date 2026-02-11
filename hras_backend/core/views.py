@@ -9,13 +9,39 @@ from django.contrib.auth import get_user_model
 from .models import Hospital, Patient, Resource, Assignment, Shift, LabReport, Note, AIUsage, AIChatMessage, Observation, Diagnosis, TestOrder, Prescription
 from .serializers import (
     HospitalSerializer, PatientSerializer,
-    ResourceSerializer, AssignmentSerializer, ShiftSerializer, LabReportSerializer, NoteSerializer, ReceptionistPatientSerializer, NursePatientSerializer, ObservationSerializer, DoctorPatientSerializer, DiagnosisSerializer, TestOrderSerializer, PrescriptionSerializer
+    ResourceSerializer, AssignmentSerializer, ShiftSerializer, LabReportSerializer, NoteSerializer, ReceptionistPatientSerializer, NursePatientSerializer, ObservationSerializer, DoctorPatientSerializer, DiagnosisSerializer, TestOrderSerializer, PrescriptionSerializer, HospitalAdminHospitalSerializer
 )
 from accounts.serializers import UserSerializer
 from .permissions import IsAdmin, IsDoctor, IsNurse, IsReceptionist, IsStaff
-from accounts.permissions import IsSuperAdmin, IsHospitalAdmin, IsDoctor as AccIsDoctor, IsNurse as AccIsNurse, HospitalScopedPermission, DoctorNursePatientPermission, IsReceptionist as AccIsReceptionist, IsNotReceptionist, DoctorPatientPermission, IsNotDoctor
+from accounts.permissions import IsAdmin, IsDoctor as AccIsDoctor, IsNurse as AccIsNurse, HospitalScopedPermission, DoctorNursePatientPermission, IsReceptionist as AccIsReceptionist, IsNotReceptionist, DoctorPatientPermission, IsNotDoctor
 import asyncio
 from .utils.ai import get_ai_suggestion
+
+def enforce_hospital_boundary(request, obj, action_description="manage"):
+    """
+    Enforce hospital boundary for scoped users.
+    
+    PREVENTS CROSS-HOSPITAL ACCESS:
+    - Only enforces boundaries for non-admin users
+    - Admins have full system access
+    - Raises PermissionDenied if boundary is violated for scoped users
+    
+    USAGE:
+    - Call before allowing scoped users to modify objects
+    - Pass the object that has a 'hospital' field
+    - Customize action_description for clear error messages
+    """
+    # Admins have full access, no boundary enforcement
+    if request.user.role == 'admin':
+        return
+        
+    if (hasattr(obj, 'hospital') and 
+        obj.hospital != request.user.hospital):
+        from rest_framework.exceptions import PermissionDenied
+        raise PermissionDenied(
+            f"You can only {action_description} resources in your own hospital. "
+            f"This {obj.__class__.__name__.lower()} belongs to {obj.hospital.name if obj.hospital else 'another hospital'}."
+        )
 
 # Combined permission for patient access roles
 class PatientAccessPermission(BasePermission):
@@ -36,31 +62,43 @@ User = get_user_model()
 class HospitalViewSet(viewsets.ModelViewSet):
     queryset = Hospital.objects.all()
     serializer_class = HospitalSerializer
-    permission_classes = [IsAuthenticated, IsSuperAdmin | IsHospitalAdmin]
+    permission_classes = [IsAuthenticated]
 
     def get_permissions(self):
-        if self.action in ['list', 'retrieve']:
-            return []  # Allow unauthenticated access for viewing hospitals
-        return [IsAuthenticated(), (IsSuperAdmin | IsHospitalAdmin)()]
+        """
+        Override permissions based on action and user role.
+        
+        ADMIN ACTIONS:
+        - All actions require admin privileges
+        - Admins have full access to manage all hospitals
+        """
+        if self.action in ['retrieve', 'update', 'partial_update', 'list', 'create', 'destroy']:
+            return [IsAuthenticated(), IsAdmin()]
+        return [IsAuthenticated()]
 
     def get_queryset(self):
-        if self.request.user.is_authenticated and self.request.user.role == 'hospital_admin':
-            return Hospital.objects.filter(id=self.request.user.hospital.id)
+        """
+        Admin can see/manage all hospitals.
+        """
         return Hospital.objects.all()
+
+    def get_serializer_class(self):
+        """
+        Admin uses full HospitalSerializer for all operations.
+        """
+        return HospitalSerializer
     
-    def check_permissions(self, request):
-        """Explicitly deny nurses and doctors from hospital management"""
-        if request.user.is_authenticated:
-            if request.user.role == 'nurse':
-                from rest_framework.exceptions import PermissionDenied
-                raise PermissionDenied("Nurses cannot access hospital management functions.")
-            if request.user.role == 'doctor':
-                from rest_framework.exceptions import PermissionDenied
-                raise PermissionDenied(
-                    "Doctors cannot access hospital management functions. "
-                    "Hospital configuration is restricted to administrators only."
-                )
-        super().check_permissions(request)
+    def perform_update(self, serializer):
+        """
+        Explicit boundary check before updating hospital.
+        
+        ENFORCES HOSPITAL BOUNDARY:
+        - Hospital admins can only update their assigned hospital
+        - Prevents cross-hospital management attempts
+        """
+        instance = self.get_object()
+        enforce_hospital_boundary(self.request, instance, "update")
+        serializer.save()
 
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
@@ -217,18 +255,17 @@ class PatientViewSet(viewsets.ModelViewSet):
         - Hospital-scoped automatically via assignment
         
         OTHER ROLES:
-        - super_admin: All patients
-        - hospital_admin: Patients in their hospital
+        - admin: All patients
+        - doctor: Patients assigned to them
+        - nurse: Patients assigned to them
         - receptionist: All patients in their hospital (basic fields only)
         """
         user = self.request.user
         if not user.is_authenticated:
             return Patient.objects.none()
         
-        if user.role == 'super_admin':
+        if user.role == 'admin':
             return Patient.objects.all()
-        elif user.role == 'hospital_admin' and user.hospital:
-            return Patient.objects.filter(hospital=user.hospital)
         elif user.role == 'doctor':
             # STRICT: Doctors only see patients assigned to them
             return Patient.objects.filter(assignment__user=user).distinct()
@@ -635,7 +672,21 @@ class NoteViewSet(viewsets.ModelViewSet):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def assignment_times_analytics(request):
-    """Analytics endpoint - denied for nurses, receptionists, and doctors"""
+    """
+    SYSTEM-WIDE ANALYTICS: Super admin only.
+    
+    DENIED FOR HOSPITAL ADMINS:
+    - Hospital admins cannot access global analytics
+    - They should use hospital-specific analytics through their dashboard
+    - This endpoint provides system-wide performance metrics
+    """
+    if request.user.role == 'hospital_admin':
+        from rest_framework.exceptions import PermissionDenied
+        raise PermissionDenied(
+            "Hospital admins cannot access system-wide analytics. "
+            "Use your hospital dashboard for hospital-specific metrics."
+        )
+    
     if request.user.role in ['nurse', 'receptionist', 'doctor']:
         from rest_framework.exceptions import PermissionDenied
         raise PermissionDenied(
@@ -649,59 +700,113 @@ def assignment_times_analytics(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 async def ai_triage(request):
+    from .utils.ai import is_gemini_available
+    
     symptoms = request.data.get('symptoms')
     if not symptoms:
         return Response({'error': 'Symptoms required'}, status=400)
     
+    available, message = is_gemini_available()
+    
+    if not available:
+        # Rule-based fallback
+        priority = 'Low'
+        if any(word in symptoms.lower() for word in ['chest pain', 'difficulty breathing', 'severe pain', 'unconscious']):
+            priority = 'Critical'
+        elif any(word in symptoms.lower() for word in ['fever', 'vomiting', 'infection']):
+            priority = 'High'
+        elif any(word in symptoms.lower() for word in ['cough', 'headache']):
+            priority = 'Medium'
+        
+        return Response({
+            'ai_available': False,
+            'message': 'AI features are currently unavailable. Using rule-based fallback.',
+            'reason': message,
+            'suggested_priority': priority,
+            'ai_explanation': 'Rule-based priority assignment due to AI unavailability.'
+        })
+    
     prompt = f"Patient symptoms: {symptoms}. Suggest priority and explanation."
     try:
         full_response = await get_ai_suggestion(prompt)
-        # Check if AI is available
-        if full_response.startswith("AI feature temporarily unavailable"):
-            # Rule-based fallback
-            priority = 'Low'
-            if any(word in symptoms.lower() for word in ['chest pain', 'difficulty breathing', 'severe pain', 'unconscious']):
-                priority = 'Critical'
-            elif any(word in symptoms.lower() for word in ['fever', 'vomiting', 'infection']):
-                priority = 'High'
-            elif any(word in symptoms.lower() for word in ['cough', 'headache']):
-                priority = 'Medium'
-            ai_explanation = "Rule-based priority assignment due to AI unavailability."
-        else:
-            # Parse AI response
-            lines = full_response.split('\n')
-            priority = 'Low'  # default
-            ai_explanation = full_response
-            for line in lines:
-                if 'priority' in line.lower():
-                    if 'critical' in line.lower():
-                        priority = 'Critical'
-                    elif 'high' in line.lower():
-                        priority = 'High'
-                    elif 'medium' in line.lower():
-                        priority = 'Medium'
-            # Increment usage
-            usage, created = AIUsage.objects.get_or_create(feature='triage', defaults={'usage_count': 0})
-            usage.usage_count += 1
-            usage.save()
+        
+        # Parse AI response
+        lines = full_response.split('\n')
+        priority = 'Low'  # default
+        ai_explanation = full_response
+        for line in lines:
+            if 'priority' in line.lower():
+                if 'critical' in line.lower():
+                    priority = 'Critical'
+                elif 'high' in line.lower():
+                    priority = 'High'
+                elif 'medium' in line.lower():
+                    priority = 'Medium'
+        
+        # Increment usage
+        usage, created = AIUsage.objects.get_or_create(feature='triage', defaults={'usage_count': 0})
+        usage.usage_count += 1
+        usage.save()
         
         return Response({
+            'ai_available': True,
+            'message': 'Gemini AI integration active — enhanced triage and assistant features enabled.',
             'suggested_priority': priority,
             'ai_explanation': ai_explanation,
             'full_response': full_response
         })
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({
+            'ai_available': False,
+            'message': 'AI features are currently unavailable. Using rule-based fallback.',
+            'reason': str(e),
+            'error': str(e)
+        }, status=500)
+
+@api_view(['GET'])
+def ai_status(request):
+    """
+    Public endpoint to check AI availability status.
+    No authentication required for demo purposes.
+    """
+    from .utils.ai import is_gemini_available
+    
+    available, message = is_gemini_available()
+    
+@api_view(['GET'])
+def ai_status(request):
+    """
+    Public endpoint to check AI availability status.
+    No authentication required for demo purposes.
+    """
+    from .utils.ai import is_gemini_available
+    
+    available, message = is_gemini_available()
+    
+    return Response({
+        'available': available,
+        'message': message
+    })
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 async def ai_chat(request):
-    import uuid
-    from .models import AIChatMessage, AIUsage
+    
     message = request.data.get('message')
     conversation_id = request.data.get('conversation_id', str(uuid.uuid4()))
     if not message:
         return Response({'error': 'Message required'}, status=400)
+    
+    available, message_status = is_gemini_available()
+    
+    if not available:
+        return Response({
+            'ai_available': False,
+            'message': 'AI features are currently unavailable. Using basic response fallback.',
+            'reason': message_status,
+            'response': 'I apologize, but the AI assistant is currently unavailable. Please consult with your medical team for any questions.',
+            'conversation_id': conversation_id
+        })
     
     # Get recent history, max 10 messages
     history = AIChatMessage.objects.filter(conversation_id=conversation_id, user=request.user).order_by('-created_at')[:10]
@@ -716,11 +821,12 @@ async def ai_chat(request):
     
     try:
         response_text = await get_ai_suggestion(prompt)
-        if not response_text.startswith("AI feature temporarily unavailable"):
-            # Increment usage
-            usage, created = AIUsage.objects.get_or_create(feature='chat', defaults={'usage_count': 0})
-            usage.usage_count += 1
-            usage.save()
+        
+        # Increment usage
+        usage, created = AIUsage.objects.get_or_create(feature='chat', defaults={'usage_count': 0})
+        usage.usage_count += 1
+        usage.save()
+        
         # Save to DB
         AIChatMessage.objects.create(
             conversation_id=conversation_id,
@@ -728,6 +834,19 @@ async def ai_chat(request):
             response=response_text,
             user=request.user
         )
-        return Response({'response': response_text, 'conversation_id': conversation_id})
+        
+        return Response({
+            'ai_available': True,
+            'message': 'Gemini AI integration active — enhanced triage and assistant features enabled.',
+            'response': response_text,
+            'conversation_id': conversation_id
+        })
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({
+            'ai_available': False,
+            'message': 'AI features are currently unavailable. Using basic response fallback.',
+            'reason': str(e),
+            'response': 'I apologize, but the AI assistant is currently unavailable. Please consult with your medical team for any questions.',
+            'conversation_id': conversation_id,
+            'error': str(e)
+        }, status=500)

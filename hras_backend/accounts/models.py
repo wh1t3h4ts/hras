@@ -23,7 +23,7 @@ class CustomUserManager(BaseUserManager):
         extra_fields.setdefault('is_staff', True)
         extra_fields.setdefault('is_superuser', True)
         extra_fields.setdefault('is_approved', True)
-        extra_fields.setdefault('role', 'super_admin')
+        extra_fields.setdefault('role', 'admin')
         
         if extra_fields.get('is_staff') is not True:
             raise ValueError('Superuser must have is_staff=True')
@@ -37,8 +37,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     """Custom user model with role-based access control"""
     
     ROLE_CHOICES = [
-        ('super_admin', 'Super Admin'),
-        ('hospital_admin', 'Hospital Admin'),
+        ('admin', 'Admin'),
         ('doctor', 'Doctor'),
         ('nurse', 'Nurse'),
         ('receptionist', 'Receptionist'),
@@ -86,14 +85,14 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     @property
     def is_hospital_staff(self):
         """Check if user is hospital-level staff"""
-        return self.role in ['hospital_admin', 'doctor', 'nurse', 'receptionist']
+        return self.role in ['admin', 'doctor', 'nurse', 'receptionist']
     
     @property
     def can_manage_hospital(self):
         """Check if user can manage hospital settings"""
-        return self.role in ['super_admin', 'hospital_admin']
+        return self.role in ['admin']
     
     @property
     def can_manage_patients(self):
         """Check if user can manage patients"""
-        return self.role in ['super_admin', 'hospital_admin', 'doctor', 'nurse', 'receptionist']
+        return self.role in ['admin', 'doctor', 'nurse', 'receptionist']

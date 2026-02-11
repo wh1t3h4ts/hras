@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import axios from 'axios';
-import { X, Sparkles } from 'lucide-react';
+import { X, Sparkles, AlertTriangle } from 'lucide-react';
 import toast from 'react-hot-toast';
+import useAiAvailability from '../../hooks/useAiAvailability';
 
 const AddPatientModal = ({ isOpen, onClose, onSuccess }) => {
   const [formData, setFormData] = useState({
@@ -15,6 +16,8 @@ const AddPatientModal = ({ isOpen, onClose, onSuccess }) => {
   const [aiSuggestion, setAiSuggestion] = useState(null);
   const [loadingAI, setLoadingAI] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  
+  const { aiAvailable, aiMessage } = useAiAvailability();
 
   if (!isOpen) return null;
 
@@ -33,11 +36,21 @@ const AddPatientModal = ({ isOpen, onClose, onSuccess }) => {
       const response = await axios.post('http://localhost:8000/api/patients/ai-triage/', {
         symptoms: formData.symptoms
       });
-      setAiSuggestion(response.data);
-      toast.success('AI suggestion received!');
+      
+      const data = response.data;
+      setAiSuggestion(data);
+      
+      if (data.ai_available) {
+        toast.success('AI triage suggestion received!');
+      } else {
+        toast('AI triage unavailable - using rule-based priority', {
+          icon: '🤖',
+          duration: 4000
+        });
+      }
     } catch (error) {
       console.error('Error getting AI suggestion:', error);
-      toast.error('AI suggestion unavailable');
+      toast.error('Unable to get triage suggestion');
     } finally {
       setLoadingAI(false);
     }
@@ -163,39 +176,74 @@ const AddPatientModal = ({ isOpen, onClose, onSuccess }) => {
             </div>
 
             {/* AI Triage Button */}
-            <button
-              type="button"
-              onClick={getAISuggestion}
-              disabled={loadingAI || !formData.symptoms.trim()}
-              className="w-full flex items-center justify-center px-4 py-2.5 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed font-medium shadow-lg shadow-purple-500/20"
-            >
-              {loadingAI ? (
-                <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
-              ) : (
-                <>
-                  <Sparkles size={18} className="mr-2" />
-                  Get AI Triage Suggestion
-                </>
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={getAISuggestion}
+                disabled={loadingAI || !formData.symptoms.trim() || !aiAvailable}
+                className={`w-full flex items-center justify-center px-4 py-2.5 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed font-medium shadow-lg ${
+                  aiAvailable 
+                    ? 'bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white shadow-purple-500/20'
+                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                }`}
+                title={!aiAvailable ? aiMessage : 'Get AI-powered triage suggestion'}
+              >
+                {loadingAI ? (
+                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-current border-t-transparent"></div>
+                ) : (
+                  <>
+                    {aiAvailable ? <Sparkles size={18} className="mr-2" /> : <AlertTriangle size={18} className="mr-2" />}
+                    {aiAvailable ? 'Get AI Triage Suggestion' : 'AI Triage Unavailable'}
+                  </>
+                )}
+              </button>
+              
+              {!aiAvailable && (
+                <p className="text-xs text-orange-600 flex items-center">
+                  <AlertTriangle size={12} className="mr-1" />
+                  AI features are offline — using basic priority rules
+                </p>
               )}
-            </button>
+            </div>
 
             {/* AI Suggestion Display */}
             {aiSuggestion && (
-              <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 space-y-3">
+              <div className={`border rounded-lg p-4 space-y-3 ${
+                aiSuggestion.ai_available 
+                  ? 'bg-purple-50 border-purple-200' 
+                  : 'bg-orange-50 border-orange-200'
+              }`}>
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <p className="text-sm text-purple-700 font-semibold mb-1">🤖 AI Analysis:</p>
+                    <p className={`text-sm font-semibold mb-1 ${
+                      aiSuggestion.ai_available ? 'text-purple-700' : 'text-orange-700'
+                    }`}>
+                      {aiSuggestion.ai_available ? '🤖 AI Analysis:' : '⚠️ Rule-based Analysis:'}
+                    </p>
                     <p className="text-sm text-gray-700 leading-relaxed">{aiSuggestion.ai_explanation}</p>
+                    {!aiSuggestion.ai_available && (
+                      <p className="text-xs text-orange-600 mt-2">
+                        {aiSuggestion.message}
+                      </p>
+                    )}
                   </div>
                 </div>
-                <div className="flex items-center justify-between pt-2 border-t border-purple-200">
-                  <p className="text-sm text-purple-700">
+                <div className={`flex items-center justify-between pt-2 border-t ${
+                  aiSuggestion.ai_available ? 'border-purple-200' : 'border-orange-200'
+                }`}>
+                  <p className={`text-sm ${
+                    aiSuggestion.ai_available ? 'text-purple-700' : 'text-orange-700'
+                  }`}>
                     Suggested Priority: <span className="font-bold">{aiSuggestion.suggested_priority}</span>
                   </p>
                   <button
                     type="button"
                     onClick={applyAISuggestion}
-                    className="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white text-xs rounded-md transition-colors"
+                    className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                      aiSuggestion.ai_available 
+                        ? 'bg-purple-600 hover:bg-purple-700 text-white'
+                        : 'bg-orange-600 hover:bg-orange-700 text-white'
+                    }`}
                   >
                     Apply Suggestion
                   </button>

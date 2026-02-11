@@ -490,3 +490,70 @@ class PrescriptionSerializer(serializers.ModelSerializer):
         model = Prescription
         fields = ['id', 'patient', 'patient_name', 'doctor', 'doctor_name', 'medication', 'dosage', 'frequency', 'duration', 'instructions', 'prescribed_at']
         read_only_fields = ['id', 'patient', 'doctor', 'prescribed_at', 'patient_name', 'doctor_name']
+
+
+class HospitalAdminHospitalSerializer(serializers.ModelSerializer):
+    """
+    Restricted serializer for hospital admins managing their hospital.
+    
+    Hospital admins can view and edit basic hospital information but cannot modify
+    critical operational data that should be controlled by super admins.
+    
+    INCLUDED FIELDS (Editable by Hospital Admin):
+    - name: Hospital name
+    - address: Hospital address  
+    - beds: Number of beds
+    - ots: Operating theaters
+    - specialties: Medical specialties offered
+    
+    READ-ONLY FIELDS:
+    - id: Auto-generated identifier
+    - created_at: Audit timestamp (not implemented in current model)
+    
+    EXCLUDED FIELDS:
+    - No global permissions or system-level settings
+    - Hospital admins are restricted to their own hospital only
+    """
+    
+    class Meta:
+        model = Hospital
+        fields = ['id', 'name', 'address', 'beds', 'ots', 'specialties']
+        read_only_fields = ['id']
+
+
+class HospitalAdminStaffSerializer(serializers.ModelSerializer):
+    """
+    Restricted serializer for hospital admins managing staff at their hospital.
+    
+    Hospital admins can view and manage staff accounts within their hospital
+    but cannot access sensitive authentication data or global permissions.
+    
+    INCLUDED FIELDS:
+    - id: Staff member identifier
+    - name: Full name (first_name + last_name)
+    - email: Email address for login
+    - role: Job role (doctor/nurse/receptionist)
+    - is_active: Account active status
+    
+    EXCLUDED FIELDS (Security & Privacy):
+    - password: Never exposed in API responses (hashed storage only)
+    - is_superuser: Global superuser permissions (super_admin only)
+    - is_staff: Django staff status (internal framework permission)
+    - is_approved: Approval status (managed by super_admin)
+    - date_joined: Account creation timestamp (audit data)
+    - hospital: Auto-assigned to admin's hospital
+    
+    RATIONALE FOR EXCLUSIONS:
+    1. Password: Security risk - passwords are hashed and should never be exposed
+    2. Global permissions (is_superuser, is_staff): Hospital admins cannot grant system-wide access
+    3. Sensitive audit data: Creation timestamps and approval status are controlled by super admins
+    """
+    name = serializers.SerializerMethodField(read_only=True)
+    
+    class Meta:
+        model = User
+        fields = ['id', 'name', 'email', 'role', 'is_active']
+    
+    def get_name(self, obj):
+        """Return full name of staff member"""
+        return obj.get_full_name()

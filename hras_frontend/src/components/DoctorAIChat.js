@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import { Send, Bot, User, AlertTriangle, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
+import useAiAvailability from '../hooks/useAiAvailability';
 
 const DoctorAIChat = () => {
   const [messages, setMessages] = useState([
@@ -16,6 +17,8 @@ const DoctorAIChat = () => {
   const [loading, setLoading] = useState(false);
   const [conversationId, setConversationId] = useState(null);
   const messagesEndRef = useRef(null);
+  
+  const { aiAvailable, aiMessage } = useAiAvailability();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -52,11 +55,19 @@ const DoctorAIChat = () => {
         text: response.data.response || 'I apologize, but I couldn\'t generate a response. Please try rephrasing your question.',
         sender: 'ai',
         timestamp: new Date(),
-        id: Date.now() + 1
+        id: Date.now() + 1,
+        ai_available: response.data.ai_available
       };
 
       setMessages(prev => [...prev, aiMessage]);
       setConversationId(response.data.conversation_id);
+      
+      if (!response.data.ai_available) {
+        toast('AI assistant is using basic responses', {
+          icon: '⚠️',
+          duration: 3000
+        });
+      }
     } catch (error) {
       console.error('AI Chat Error:', error);
       const errorMessage = {
@@ -93,8 +104,29 @@ const DoctorAIChat = () => {
             <Bot className="h-6 w-6 text-white" />
           </div>
           <div>
-            <h1 className="text-xl font-semibold text-gray-900">AI Medical Assistant</h1>
-            <p className="text-sm text-gray-600">Powered by advanced healthcare AI</p>
+            <div className="flex items-center space-x-2">
+              <h1 className="text-xl font-semibold text-gray-900">AI Medical Assistant</h1>
+              {aiAvailable ? (
+                <div className="flex items-center space-x-1 text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">
+                  <Sparkles size={10} />
+                  <span>AI Online</span>
+                </div>
+              ) : (
+                <div className="flex items-center space-x-1 text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded-full">
+                  <AlertTriangle size={10} />
+                  <span>AI Offline</span>
+                </div>
+              )}
+            </div>
+            <p className="text-sm text-gray-600">
+              {aiAvailable 
+                ? 'Powered by advanced healthcare AI' 
+                : 'Using basic response system'
+              }
+            </p>
+            {!aiAvailable && (
+              <p className="text-xs text-orange-600 mt-1">{aiMessage}</p>
+            )}
           </div>
         </div>
       </div>

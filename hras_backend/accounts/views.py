@@ -4,7 +4,8 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from .models import CustomUser
 from .serializers import RegisterSerializer, UserSerializer
-from .permissions import IsSuperAdmin, IsHospitalAdminOrSuperAdmin
+from .permissions import IsAdmin, HospitalAdminOnly
+from core.serializers import HospitalAdminStaffSerializer
 
 
 class RegisterView(generics.CreateAPIView):
@@ -56,31 +57,27 @@ class RegisterView(generics.CreateAPIView):
 
 class UserManagementViewSet(viewsets.ModelViewSet):
     """
-    Super Admin endpoint for managing all users.
+    ADMIN ONLY: Complete user management across all hospitals.
     
-    Permissions:
-    - List/Retrieve: Hospital Admin or Super Admin
-    - Create/Update/Delete: Super Admin only
-    - Approve/Reject: Super Admin only
+    RESTRICTED TO ADMINS ONLY:
+    - Only admins can manage users globally
+    - Includes user approval, role changes, hospital assignments
+    
+    SECURITY BOUNDARY:
+    - This endpoint provides system-wide user management capabilities
     """
     
     queryset = CustomUser.objects.all()
     serializer_class = UserSerializer
+    permission_classes = [IsAdmin]  # ADMIN ONLY
     
     def get_permissions(self):
-        if self.action == 'me':
-            return [IsAuthenticated()]
-        elif self.action in ['list', 'retrieve']:
-            return [IsHospitalAdminOrSuperAdmin()]
-        return [IsSuperAdmin()]
+        # All actions require admin privileges
+        return [IsAdmin()]
     
     def get_queryset(self):
-        user = self.request.user
-        if user.role == 'super_admin':
-            return CustomUser.objects.all()
-        elif user.role == 'hospital_admin' and user.hospital:
-            return CustomUser.objects.filter(hospital=user.hospital)
-        return CustomUser.objects.filter(id=user.id)
+        # Admin only - full access to all users
+        return CustomUser.objects.all()
     
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
     def me(self, request):
@@ -88,14 +85,14 @@ class UserManagementViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(request.user)
         return Response(serializer.data)
     
-    @action(detail=False, methods=['get'], permission_classes=[IsSuperAdmin])
+    @action(detail=False, methods=['get'], permission_classes=[IsAdmin])
     def pending(self, request):
         """List all pending approval users"""
         pending_users = CustomUser.objects.filter(is_approved=False)
         serializer = self.get_serializer(pending_users, many=True)
         return Response(serializer.data)
     
-    @action(detail=True, methods=['post'], permission_classes=[IsSuperAdmin])
+    @action(detail=True, methods=['post'], permission_classes=[IsAdmin])
     def approve(self, request, pk=None):
         """Approve a user account"""
         user = self.get_object()
@@ -108,7 +105,7 @@ class UserManagementViewSet(viewsets.ModelViewSet):
             'user': UserSerializer(user).data
         })
     
-    @action(detail=True, methods=['post'], permission_classes=[IsSuperAdmin])
+    @action(detail=True, methods=['post'], permission_classes=[IsAdmin])
     def reject(self, request, pk=None):
         """Reject a user account"""
         user = self.get_object()
@@ -121,13 +118,13 @@ class UserManagementViewSet(viewsets.ModelViewSet):
             'user': UserSerializer(user).data
         })
     
-    @action(detail=True, methods=['post'], permission_classes=[IsSuperAdmin])
+    @action(detail=True, methods=['post'], permission_classes=[IsAdmin])
     def deactivate(self, request, pk=None):
         """Deactivate a user account"""
         user = self.get_object()
-        if user.role == 'super_admin':
+        if user.role == 'admin':
             return Response(
-                {'error': 'Cannot deactivate super admin accounts.'},
+                {'error': 'Cannot deactivate admin accounts.'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
@@ -139,7 +136,7 @@ class UserManagementViewSet(viewsets.ModelViewSet):
             'user': UserSerializer(user).data
         })
     
-    @action(detail=True, methods=['post'], permission_classes=[IsSuperAdmin])
+    @action(detail=True, methods=['post'], permission_classes=[IsAdmin])
     def activate(self, request, pk=None):
         """Activate a user account"""
         user = self.get_object()
@@ -151,7 +148,7 @@ class UserManagementViewSet(viewsets.ModelViewSet):
             'user': UserSerializer(user).data
         })
     
-    @action(detail=True, methods=['patch'], permission_classes=[IsSuperAdmin])
+    @action(detail=True, methods=['patch'], permission_classes=[IsAdmin])
     def assign_hospital(self, request, pk=None):
         """Assign user to a hospital"""
         user = self.get_object()
@@ -179,7 +176,7 @@ class UserManagementViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
     
-    @action(detail=True, methods=['patch'], permission_classes=[IsSuperAdmin])
+    @action(detail=True, methods=['patch'], permission_classes=[IsAdmin])
     def change_role(self, request, pk=None):
         """Change user role"""
         user = self.get_object()
@@ -203,4 +200,76 @@ class UserManagementViewSet(viewsets.ModelViewSet):
         return Response({
             'message': f'User {user.email} role changed to {new_role}.',
             'user': UserSerializer(user).data
+        })
+
+
+class StaffViewSet(viewsets.ModelViewSet):
+    """
+    Admin endpoint for managing staff (doctors and nurses).
+    
+    PERMISSIONS:
+    - All actions require admin privileges
+    - Admins have full access to manage all staff
+    
+    SERIALIZER:
+    - Uses HospitalAdminStaffSerializer (restricted fields)
+    - Excludes sensitive data like passwords and global permissions
+    """
+    
+    serializer_class = HospitalAdminStaffSerializer
+    permission_classes = [IsAuthenticated, IsAdmin]
+    
+    def get_queryset(self):
+        """
+        Admin can manage all doctors and nurses across all hospitals.
+        """
+        return CustomUser.objects.filter(role__in=['doctor', 'nurse'])
+    
+    @action(detail=True, methods=['post'], permission_classes=[IsAdmin])
+    def deactivate(self, request, pk=None):
+        """
+        Deactivate a staff member (admin action).
+        
+        SECURITY:
+        - Admins can deactivate any staff member
+        - Cannot deactivate super admins
+        - Maintains audit trail of deactivation
+        """
+        user = self.get_object()
+        
+        # Explicit boundary check using utility function
+        from core.views import enforce_hospital_boundary
+        enforce_hospital_boundary(request, user, "deactivate staff at")
+        
+        # Prevent deactivating super admins
+        if user.role == 'super_admin':
+            return Response(
+                {'error': 'Cannot deactivate super admin accounts.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        user.is_active = False
+        user.save()
+        
+        return Response({
+            'message': f'Staff member {user.email} has been deactivated.',
+            'user': self.get_serializer(user).data
+        })
+    
+    @action(detail=True, methods=['post'], permission_classes=[IsAdmin])
+    def activate(self, request, pk=None):
+        """
+        Activate a staff member (admin action).
+        
+        SECURITY:
+        - Admins can activate any staff member
+        """
+        user = self.get_object()
+        
+        user.is_active = True
+        user.save()
+        
+        return Response({
+            'message': f'Staff member {user.email} has been activated.',
+            'user': self.get_serializer(user).data
         })
