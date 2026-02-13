@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { AiProvider, useAiContext } from './contexts/AiContext';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import AppLayout from './components/layout/AppLayout';
 import Login from './pages/Login';
@@ -22,20 +23,18 @@ import UserManagement from './pages/UserManagement';
 import NurseDashboard from './pages/NurseDashboard';
 import DoctorDashboard from './pages/DoctorDashboard';
 import HospitalAdminDashboard from './pages/HospitalAdminDashboard';
-import useAiAvailability from './hooks/useAiAvailability';
 import toast from 'react-hot-toast';
 
 
 function AiStatusNotifier() {
   const { user } = useAuth();
-  const { aiAvailable, aiMessage } = useAiAvailability();
+  const { aiAvailable, aiMessage } = useAiContext();
   
   useEffect(() => {
     if (user && !aiAvailable) {
       toast('AI features are currently unavailable', {
         icon: '🤖',
-        duration: 5000,
-        description: 'The system is using rule-based fallbacks for triage and chat.'
+        duration: 5000
       });
     }
   }, [user, aiAvailable]);
@@ -46,8 +45,9 @@ function AiStatusNotifier() {
 function App() {
   return (
     <AuthProvider>
-      <AiStatusNotifier />
-      <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <AiProvider>
+        <AiStatusNotifier />
+        <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <AnimatePresence mode="wait">
           <div className="min-h-screen bg-gray-50">
             <Routes>
@@ -125,6 +125,7 @@ function App() {
           </div>
         </AnimatePresence>
       </Router>
+      </AiProvider>
     </AuthProvider>
   );
 }

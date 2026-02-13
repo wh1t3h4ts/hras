@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { CheckCircle, XCircle, UserPlus, Trash2 } from 'lucide-react';
+import { CheckCircle, XCircle, UserPlus } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const UserManagement = () => {
@@ -62,6 +62,51 @@ const UserManagement = () => {
     }
   };
 
+  const handleDeactivate = async (userId) => {
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(
+        `http://localhost:8000/api/accounts/users/${userId}/deactivate/`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      toast.success('User deactivated');
+      fetchUsers();
+    } catch (error) {
+      toast.error('Failed to deactivate user');
+    }
+  };
+
+  const handleActivate = async (userId) => {
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(
+        `http://localhost:8000/api/accounts/users/${userId}/activate/`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      toast.success('User activated');
+      fetchUsers();
+    } catch (error) {
+      toast.error('Failed to activate user');
+    }
+  };
+
+  const handleRoleChange = async (userId, newRole) => {
+    try {
+      const token = localStorage.getItem('token');
+      await axios.patch(
+        `http://localhost:8000/api/accounts/users/${userId}/change_role/`,
+        { role: newRole },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      toast.success('User role updated');
+      fetchUsers();
+    } catch (error) {
+      toast.error('Failed to update user role');
+    }
+  };
+
   if (loading) {
     return <div className="flex justify-center items-center h-96">
       <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
@@ -87,8 +132,7 @@ const UserManagement = () => {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Role</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Hospital</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                </tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>                </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {pendingUsers.map((user) => (
@@ -168,6 +212,33 @@ const UserManagement = () => {
                         Inactive
                       </span>
                     )}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
+                    {user.is_active ? (
+                      <button
+                        onClick={() => handleDeactivate(user.id)}
+                        className="inline-flex items-center px-2 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700"
+                      >
+                        Deactivate
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleActivate(user.id)}
+                        className="inline-flex items-center px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700"
+                      >
+                        Activate
+                      </button>
+                    )}
+                    <select
+                      value={user.role}
+                      onChange={(e) => handleRoleChange(user.id, e.target.value)}
+                      className="inline-flex items-center px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
+                    >
+                      <option value="receptionist">Receptionist</option>
+                      <option value="nurse">Nurse</option>
+                      <option value="doctor">Doctor</option>
+                      <option value="admin">Admin</option>
+                    </select>
                   </td>
                 </tr>
               ))}

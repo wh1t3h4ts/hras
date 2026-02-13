@@ -72,7 +72,9 @@ class UserManagementViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAdmin]  # ADMIN ONLY
     
     def get_permissions(self):
-        # All actions require admin privileges
+        # 'me' action allows authenticated users, others require admin
+        if self.action == 'me':
+            return [IsAuthenticated()]
         return [IsAdmin()]
     
     def get_queryset(self):
@@ -242,7 +244,7 @@ class StaffViewSet(viewsets.ModelViewSet):
         enforce_hospital_boundary(request, user, "deactivate staff at")
         
         # Prevent deactivating super admins
-        if user.role == 'super_admin':
+        if user.role == 'admin':
             return Response(
                 {'error': 'Cannot deactivate super admin accounts.'},
                 status=status.HTTP_403_FORBIDDEN

@@ -30,7 +30,7 @@ pymysql.install_as_MySQLdb()
 SECRET_KEY = 'django-insecure-ygweuyqd$1d_@(p!+kh_bj2io=jl*oaq61$=ld(n(!rmab1u_+'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False
+DEBUG = True
 
 ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 
@@ -159,7 +159,7 @@ TIME_ZONE = 'UTC'
 
 USE_I18N = True
 
-USE_TZ = True
+USE_TZ = False
 
 
 # Static files (CSS, JavaScript, Images)

@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { UserPlus, Stethoscope, Calendar, Building2, FileText } from 'lucide-react';
+import { UserPlus, Stethoscope, Calendar, Building2, FileText, User, Shield } from 'lucide-react';
 
 const QuickActions = ({ role }) => {
   const navigate = useNavigate();
@@ -9,8 +9,10 @@ const QuickActions = ({ role }) => {
     admin: [
       { label: 'Add Patient', icon: UserPlus, path: '/patients', color: 'blue' },
       { label: 'Add Doctor', icon: Stethoscope, path: '/staff', color: 'green' },
-      { label: 'Assign Shift', icon: Calendar, path: '/shifts', color: 'purple' },
-      { label: 'Hospital Details', icon: Building2, path: '/hospital-management', color: 'orange' }
+      { label: 'Add Nurse', icon: User, path: '/staff', color: 'purple' },
+      { label: 'Add Receptionist', icon: Shield, path: '/staff', color: 'orange' },
+      { label: 'Assign Shift', icon: Calendar, path: '/shifts', color: 'red' },
+      { label: 'Hospital Details', icon: Building2, path: '/hospital-management', color: 'indigo' }
     ],
     doctor: [
       { label: 'My Patients', icon: UserPlus, path: '/patients', color: 'blue' },
@@ -31,7 +33,9 @@ const QuickActions = ({ role }) => {
     blue: 'bg-blue-600 hover:bg-blue-700',
     green: 'bg-green-600 hover:bg-green-700',
     purple: 'bg-purple-600 hover:bg-purple-700',
-    orange: 'bg-orange-600 hover:bg-orange-700'
+    orange: 'bg-orange-600 hover:bg-orange-700',
+    red: 'bg-red-600 hover:bg-red-700',
+    indigo: 'bg-indigo-600 hover:bg-indigo-700'
   };
 
   const userActions = actions[role] || actions.receptionist;

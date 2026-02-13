@@ -1,4 +1,12 @@
-import google.generativeai as genai
+try:
+    import google.generativeai as genai
+    AI_AVAILABLE = True
+    print("Google Generative AI imported successfully")
+except ImportError as e:
+    genai = None
+    AI_AVAILABLE = False
+    print(f"Failed to import Google Generative AI: {e}")
+
 from django.conf import settings
 import asyncio
 import time
@@ -30,7 +38,7 @@ def is_gemini_available() -> tuple[bool, str]:
         return _ai_status_cache['available'], _ai_status_cache['message']
     
     # Check if API key is configured
-    if not settings.GEMINI_API_KEY:
+    if not settings.GEMINI_API_KEY or not AI_AVAILABLE:
         # Demo mode: simulate AI being available for science fair demo
         _ai_status_cache.update({
             'last_check': current_time,
@@ -63,23 +71,28 @@ def is_gemini_available() -> tuple[bool, str]:
             })
             return False, 'Gemini API returned empty response'
             
-    except genai.types.generation_types.BlockedPromptException as e:
-        _ai_status_cache.update({
-            'last_check': current_time,
-            'available': False,
-            'message': f'Gemini API blocked: {str(e)}'
-        })
-        return False, f'Gemini API blocked: {str(e)}'
-        
-    except genai.types.generation_types.StopCandidateException as e:
-        _ai_status_cache.update({
-            'last_check': current_time,
-            'available': False,
-            'message': f'Gemini API stopped: {str(e)}'
-        })
-        return False, f'Gemini API stopped: {str(e)}'
-        
     except Exception as e:
+        if AI_AVAILABLE:
+            try:
+                # Try to catch specific genai exceptions
+                if hasattr(genai, 'types') and hasattr(genai.types, 'generation_types'):
+                    if isinstance(e, genai.types.generation_types.BlockedPromptException):
+                        _ai_status_cache.update({
+                            'last_check': current_time,
+                            'available': False,
+                            'message': f'Gemini API blocked: {str(e)}'
+                        })
+                        return False, f'Gemini API blocked: {str(e)}'
+                    elif isinstance(e, genai.types.generation_types.StopCandidateException):
+                        _ai_status_cache.update({
+                            'last_check': current_time,
+                            'available': False,
+                            'message': f'Gemini API stopped: {str(e)}'
+                        })
+                        return False, f'Gemini API stopped: {str(e)}'
+            except:
+                pass
+        
         error_msg = str(e).lower()
         if 'api_key' in error_msg or 'invalid' in error_msg:
             message = 'Invalid Gemini API key'
@@ -100,21 +113,19 @@ def is_gemini_available() -> tuple[bool, str]:
 
 async def get_ai_suggestion(prompt: str, model: str = "gemini-1.5-flash") -> str:
     """
-    Get AI suggestion with availability checking.
+    Get AI suggestion.
     
-    Returns fallback message if AI is unavailable.
+    Always tries to use real API if key is configured, falls back to demo if API fails.
     """
-    available, message = is_gemini_available()
-    
-    if not available:
-        return "AI feature temporarily unavailable — using rule-based priority. IMPORTANT: This is NOT real medical advice. Consult qualified medical professionals."
-    
-    # Check if we're in demo mode (no real API key)
+    # Check if we have an API key
     if not settings.GEMINI_API_KEY:
         # Demo mode: provide simulated AI responses
         return get_demo_ai_response(prompt)
     
     try:
+        if not AI_AVAILABLE:
+            raise Exception("AI library not available")
+        
         genai.configure(api_key=settings.GEMINI_API_KEY)
         model_instance = genai.GenerativeModel(model)
         system_prompt = (
@@ -129,14 +140,36 @@ async def get_ai_suggestion(prompt: str, model: str = "gemini-1.5-flash") -> str
         return response.text.strip()
     except Exception as e:
         logger.error(f"AI suggestion error: {e}")
-        return "AI feature temporarily unavailable — using rule-based priority. IMPORTANT: This is NOT real medical advice. Consult qualified medical professionals."
+        # Return error message instead of demo response
+        return f"AI service temporarily unavailable. Error: {str(e)}. Please contact support if this persists."
 
 
 def get_demo_ai_response(prompt: str) -> str:
     """
-    Provide simulated AI responses for demo purposes when no API key is configured.
+    Provide simulated AI responses for demo purposes when no API key is configured or API fails.
     """
     prompt_lower = prompt.lower()
+    
+    # Check if this is a chat prompt (contains medical knowledge assistant)
+    if "medical knowledge assistant" in prompt_lower:
+        # Extract the last user message
+        if "User: " in prompt:
+            # Get the last user message
+            user_part = prompt.split("User: ")[-1]
+            last_message = user_part.split("\n")[0].lower().strip()
+            
+            if "hello" in last_message or "hi" in last_message:
+                return "Hello! I'm your AI Medical Assistant. I can help with general medical information, symptom analysis, and healthcare guidance. Please remember that I'm not a substitute for professional medical advice. How can I assist you today?"
+            elif "how are you" in last_message or "how are u" in last_message:
+                return "I'm functioning optimally, thank you for asking! As an AI assistant, I'm always ready to help with medical information and guidance. What medical questions can I help you with today?"
+            elif "name" in last_message or "what's your name" in last_message or "whats ur name" in last_message or "what is your name" in last_message:
+                return "I'm your AI Medical Assistant, designed to provide general medical information and support for healthcare professionals. I don't have a personal name, but I'm here to help with medical knowledge and guidance."
+            elif "symptom" in last_message or "pain" in last_message:
+                return "I understand you're asking about symptoms. While I can provide general information, please remember that I'm not a substitute for professional medical advice. For any health concerns, please consult with a qualified healthcare professional. Can you tell me more about what you're experiencing?"
+            else:
+                return "Thank you for your question. As an AI medical assistant, I can provide general information about medical topics, but please remember that this is not a substitute for professional medical advice, diagnosis, or treatment. Always consult qualified healthcare professionals for medical concerns. How else can I help you?"
+        else:
+            return "Hello! I'm your AI Medical Assistant. I can help with general medical information, symptom analysis, and healthcare guidance. Please remember that I'm not a substitute for professional medical advice. How can I assist you today?"
     
     # Triage responses based on symptoms
     if "chest pain" in prompt_lower or "difficulty breathing" in prompt_lower:

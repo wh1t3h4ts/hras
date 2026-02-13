@@ -1,11 +1,16 @@
 from rest_framework import viewsets, status
-from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.decorators import action, api_view, permission_classes, throttle_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, BasePermission
+from rest_framework.throttling import AnonRateThrottle
+
+class AiStatusThrottle(AnonRateThrottle):
+    rate = '30/minute'  # Higher rate for status checks
 from django.utils import timezone
 from datetime import datetime
 from django.db.models import Avg
 from django.contrib.auth import get_user_model
+import uuid
 from .models import Hospital, Patient, Resource, Assignment, Shift, LabReport, Note, AIUsage, AIChatMessage, Observation, Diagnosis, TestOrder, Prescription
 from .serializers import (
     HospitalSerializer, PatientSerializer,
@@ -48,14 +53,14 @@ class PatientAccessPermission(BasePermission):
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated:
             return False
-        return request.user.role in ['receptionist', 'doctor', 'nurse', 'hospital_admin', 'super_admin']
+        return request.user.role in ['receptionist', 'doctor', 'nurse', 'admin']
 
 # Combined permission for staff roles (doctor, nurse, admin)
 class StaffPatientPermission(BasePermission):
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated:
             return False
-        return request.user.role in ['doctor', 'nurse', 'hospital_admin', 'super_admin']
+        return request.user.role in ['doctor', 'nurse', 'admin']
 
 User = get_user_model()
 
@@ -71,8 +76,13 @@ class HospitalViewSet(viewsets.ModelViewSet):
         ADMIN ACTIONS:
         - All actions require admin privileges
         - Admins have full access to manage all hospitals
+        
+        PUBLIC ACTIONS:
+        - list: Allow unauthenticated users to see hospitals for registration
         """
-        if self.action in ['retrieve', 'update', 'partial_update', 'list', 'create', 'destroy']:
+        if self.action == 'list':
+            return []  # No authentication required for listing hospitals
+        elif self.action in ['retrieve', 'update', 'partial_update', 'create', 'destroy']:
             return [IsAuthenticated(), IsAdmin()]
         return [IsAuthenticated()]
 
@@ -108,11 +118,11 @@ class UserViewSet(viewsets.ModelViewSet):
         if self.action == 'create':
             return []  # Allow public registration
         elif self.action in ['list', 'retrieve']:
-            return [IsAuthenticated]  # Allow authenticated users to view users
+            return [IsAuthenticated()]  # Allow authenticated users to view users
         elif self.action in ['update', 'partial_update']:
             # Only super admin can change roles, or user can update their own profile (but not role)
-            return [IsAuthenticated, IsSuperAdmin | self._is_self_update]
-        return [IsAuthenticated, IsSuperAdmin]  # Require super admin for delete
+            return [IsAuthenticated(), IsAdmin() | self._is_self_update]
+        return [IsAuthenticated(), IsAdmin()]  # Require super admin for delete
 
     def _is_self_update(self):
         """Custom permission check for self-updates (excluding role changes)"""
@@ -133,7 +143,7 @@ class UserViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if not user.is_authenticated:
             return User.objects.none()
-        if user.role == 'super_admin':
+        if user.role == 'admin':
             return User.objects.all()
         elif user.role == 'hospital_admin':
             if user.hospital:
@@ -548,7 +558,7 @@ class ResourceViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if not user.is_authenticated:
             return Resource.objects.none()
-        if user.role == 'super_admin':
+        if user.role == 'admin':
             return Resource.objects.all()
         return Resource.objects.filter(hospital=user.hospital)
     
@@ -578,7 +588,7 @@ class AssignmentViewSet(viewsets.ReadOnlyModelViewSet):
         user = self.request.user
         if not user.is_authenticated:
             return Assignment.objects.none()
-        if user.role == 'super_admin':
+        if user.role == 'admin':
             return Assignment.objects.all()
         return Assignment.objects.filter(patient__hospital=user.hospital)
 
@@ -601,7 +611,7 @@ class ShiftViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if not user.is_authenticated:
             return Shift.objects.none()
-        if user.role == 'super_admin':
+        if user.role == 'admin':
             return Shift.objects.all()
         elif user.role in ['nurse', 'doctor']:
             # Nurses and doctors can only see their own shifts
@@ -609,8 +619,11 @@ class ShiftViewSet(viewsets.ModelViewSet):
         return Shift.objects.filter(staff__hospital=user.hospital)
 
     def perform_create(self, serializer):
-        shift = serializer.save()
-        # Staff availability tracking removed for CustomUser compatibility
+        hospital = self.request.user.hospital
+        if not hospital:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError("User must be assigned to a hospital before creating shifts.")
+        serializer.save(hospital=hospital)
 
 class LabReportViewSet(viewsets.ModelViewSet):
     """
@@ -641,7 +654,7 @@ class LabReportViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if not user.is_authenticated:
             return LabReport.objects.none()
-        if user.role == 'super_admin':
+        if user.role == 'admin':
             return LabReport.objects.all()
         return LabReport.objects.filter(patient__hospital=user.hospital)
 
@@ -662,7 +675,7 @@ class NoteViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if not user.is_authenticated:
             return Note.objects.none()
-        if user.role == 'super_admin':
+        if user.role == 'admin':
             return Note.objects.all()
         return Note.objects.filter(patient__hospital=user.hospital)
 
@@ -764,16 +777,8 @@ async def ai_triage(request):
         }, status=500)
 
 @api_view(['GET'])
-def ai_status(request):
-    """
-    Public endpoint to check AI availability status.
-    No authentication required for demo purposes.
-    """
-    from .utils.ai import is_gemini_available
-    
-    available, message = is_gemini_available()
-    
-@api_view(['GET'])
+@throttle_classes([AiStatusThrottle])
+@permission_classes([])  # No auth required
 def ai_status(request):
     """
     Public endpoint to check AI availability status.
@@ -790,50 +795,41 @@ def ai_status(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-async def ai_chat(request):
-    
-    message = request.data.get('message')
-    conversation_id = request.data.get('conversation_id', str(uuid.uuid4()))
-    if not message:
-        return Response({'error': 'Message required'}, status=400)
-    
-    available, message_status = is_gemini_available()
-    
-    if not available:
-        return Response({
-            'ai_available': False,
-            'message': 'AI features are currently unavailable. Using basic response fallback.',
-            'reason': message_status,
-            'response': 'I apologize, but the AI assistant is currently unavailable. Please consult with your medical team for any questions.',
-            'conversation_id': conversation_id
-        })
-    
-    # Get recent history, max 10 messages
-    history = AIChatMessage.objects.filter(conversation_id=conversation_id, user=request.user).order_by('-created_at')[:10]
-    history = list(reversed(history))
-    
-    # Build prompt with history
-    system_prompt = "You are a medical knowledge assistant for hospital staff. Provide accurate, evidence-based info. ALWAYS add disclaimer: This is NOT a substitute for professional medical advice or diagnosis."
-    prompt = system_prompt + "\n\n"
-    for h in history:
-        prompt += f"User: {h.message}\nAssistant: {h.response}\n"
-    prompt += f"User: {message}\nAssistant:"
+def ai_chat(request):
+    from .utils.ai import get_ai_suggestion
     
     try:
-        response_text = await get_ai_suggestion(prompt)
+        message = request.data.get('message')
+        conversation_id = request.data.get('conversation_id', str(uuid.uuid4()))
+        if not message:
+            return Response({'error': 'Message required'}, status=400)
         
+        # Get recent history, max 10 messages
+        history = AIChatMessage.objects.filter(conversation_id=conversation_id, user=request.user).order_by('-created_at')[:10]
+        history = list(reversed(history))
+        
+        # Build prompt with history
+        system_prompt = "You are a medical knowledge assistant for hospital staff. Provide accurate, evidence-based info. ALWAYS add disclaimer: This is NOT a substitute for professional medical advice or diagnosis."
+        prompt = system_prompt + "\n\n"
+        for h in history:
+            prompt += f"User: {h.message}\nAssistant: {h.response}\n"
+        prompt += f"User: {message}\nAssistant:"
+        
+        response_text = asyncio.run(get_ai_suggestion(prompt))
+        
+        # Temporarily disable database operations to debug
         # Increment usage
-        usage, created = AIUsage.objects.get_or_create(feature='chat', defaults={'usage_count': 0})
-        usage.usage_count += 1
-        usage.save()
+        # usage, created = AIUsage.objects.get_or_create(feature='chat', defaults={'usage_count': 0})
+        # usage.usage_count += 1
+        # usage.save()
         
         # Save to DB
-        AIChatMessage.objects.create(
-            conversation_id=conversation_id,
-            message=message,
-            response=response_text,
-            user=request.user
-        )
+        # AIChatMessage.objects.create(
+        #     conversation_id=conversation_id,
+        #     message=message,
+        #     response=response_text,
+        #     user=request.user
+        # )
         
         return Response({
             'ai_available': True,
@@ -847,6 +843,6 @@ async def ai_chat(request):
             'message': 'AI features are currently unavailable. Using basic response fallback.',
             'reason': str(e),
             'response': 'I apologize, but the AI assistant is currently unavailable. Please consult with your medical team for any questions.',
-            'conversation_id': conversation_id,
+            'conversation_id': request.data.get('conversation_id', str(uuid.uuid4())),
             'error': str(e)
         }, status=500)

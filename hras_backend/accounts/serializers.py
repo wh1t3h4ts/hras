@@ -139,7 +139,17 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
         fields = ['id', 'email', 'first_name', 'last_name', 'role', 'is_approved', 'is_active', 'hospital', 'hospital_name', 'date_joined']
-        read_only_fields = ['id', 'date_joined', 'is_approved', 'is_active']
+        read_only_fields = ['id', 'date_joined']
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get('request')
+        if request and request.user and request.user.is_authenticated and request.user.role == 'admin':
+            # Admins can update approval status and active status
+            pass  # All fields are writable for admins
+        else:
+            # Non-admins can only update their own basic info
+            self.Meta.read_only_fields.extend(['is_approved', 'is_active', 'role', 'hospital'])
     
     def get_hospital_name(self, obj):
         return obj.hospital.name if obj.hospital else None

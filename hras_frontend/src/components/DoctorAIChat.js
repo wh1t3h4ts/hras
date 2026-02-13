@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import { Send, Bot, User, AlertTriangle, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
-import useAiAvailability from '../hooks/useAiAvailability';
+import { useAiContext } from '../contexts/AiContext';
 
 const DoctorAIChat = () => {
   const [messages, setMessages] = useState([
@@ -18,7 +18,7 @@ const DoctorAIChat = () => {
   const [conversationId, setConversationId] = useState(null);
   const messagesEndRef = useRef(null);
   
-  const { aiAvailable, aiMessage } = useAiAvailability();
+  const { aiAvailable, aiMessage } = useAiContext();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });

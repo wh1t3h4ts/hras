@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { LogIn } from 'lucide-react';
@@ -10,8 +10,25 @@ import HRASLogo from '../components/ui/HRASLogo';
 const Login = () => {
   const [formData, setFormData] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
   const navigate = useNavigate();
   const { login } = useAuth();
+
+  // Auto-close error modal after 3 seconds
+  useEffect(() => {
+    let timeoutId;
+    if (showErrorModal) {
+      timeoutId = setTimeout(() => {
+        setShowErrorModal(false);
+      }, 3000);
+    }
+    return () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
+  }, [showErrorModal]);
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -29,6 +46,8 @@ const Login = () => {
     } catch (error) {
       console.error('Login error:', error);
       
+      let errorMsg = 'Invalid credentials';
+      
       if (error.response?.status === 401 || error.response?.status === 403) {
         const errorMessage = error.response?.data?.detail || '';
         
@@ -36,13 +55,16 @@ const Login = () => {
         if (errorMessage.toLowerCase().includes('not approved') || 
             errorMessage.toLowerCase().includes('pending') ||
             errorMessage.toLowerCase().includes('awaiting approval')) {
-          toast.error('Account is pending HR approval. You will receive an email when ready.');
-          return;
+          errorMsg = 'Account is pending HR approval. You will receive an email when ready.';
+        } else {
+          errorMsg = errorMessage || 'Invalid email or password. Please check your credentials and try again.';
         }
+      } else if (error.response?.data?.detail) {
+        errorMsg = error.response.data.detail;
       }
       
-      // General error handling
-      toast.error(error.response?.data?.detail || 'Invalid credentials');
+      setErrorMessage(errorMsg);
+      setShowErrorModal(true);
     } finally {
       setLoading(false);
     }
@@ -127,6 +149,34 @@ const Login = () => {
           <p className="text-gray-500 text-xs">Hospital Resource Allocation System v2.0</p>
         </div>
       </motion.div>
+
+      {/* Error Modal */}
+      {showErrorModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="bg-white rounded-xl shadow-2xl p-6 max-w-md w-full mx-4"
+          >
+            <div className="text-center">
+              <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4">
+                <svg className="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">Login Failed</h3>
+              <p className="text-sm text-gray-600 mb-6">{errorMessage}</p>
+              <button
+                onClick={() => setShowErrorModal(false)}
+                className="w-full px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition-colors"
+              >
+                Try Again
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 };

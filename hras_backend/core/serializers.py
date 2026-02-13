@@ -127,7 +127,8 @@ class AssignmentSerializer(serializers.ModelSerializer):
 class ShiftSerializer(serializers.ModelSerializer):
     class Meta:
         model = Shift
-        fields = '__all__'
+        fields = ['id', 'staff', 'start_time', 'end_time', 'location']
+        read_only_fields = ['id']
 
 class LabReportSerializer(serializers.ModelSerializer):
     response_time = serializers.SerializerMethodField()

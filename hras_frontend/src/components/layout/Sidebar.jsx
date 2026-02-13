@@ -16,12 +16,12 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import useAiAvailability from '../../hooks/useAiAvailability';
+import { useAiContext } from '../../contexts/AiContext';
 import HRASLogo from '../ui/HRASLogo';
 
 const Sidebar = ({ isOpen, onClose }) => {
   const { user } = useAuth();
-  const { aiAvailable, aiMessage } = useAiAvailability();
+  const { aiAvailable, aiMessage } = useAiContext();
   const role = user?.role;
   
   const isAdmin = role === 'admin';

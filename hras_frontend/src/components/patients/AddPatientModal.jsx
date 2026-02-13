@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import axios from 'axios';
 import { X, Sparkles, AlertTriangle } from 'lucide-react';
 import toast from 'react-hot-toast';
-import useAiAvailability from '../../hooks/useAiAvailability';
+import { useAiContext } from '../../contexts/AiContext';
 
 const AddPatientModal = ({ isOpen, onClose, onSuccess }) => {
   const [formData, setFormData] = useState({
@@ -17,7 +17,7 @@ const AddPatientModal = ({ isOpen, onClose, onSuccess }) => {
   const [loadingAI, setLoadingAI] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   
-  const { aiAvailable, aiMessage } = useAiAvailability();
+  const { aiAvailable, aiMessage } = useAiContext();
 
   if (!isOpen) return null;
 
